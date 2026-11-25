@@ -3,7 +3,8 @@
 App web instalable (PWA) en español con el clima en vivo de **North Brunswick, NJ** y **Marlboro, NJ**.
 
 - Condiciones actuales, pronóstico por hora de hoy y pronóstico diario de 16 días (°F y mph).
-- Datos en vivo de [Open-Meteo](https://open-meteo.com/) (sin clave de API).
+- Tendencia de los días 17 a 45 con el modelo extendido ECMWF EC46 (promedio de 51 escenarios y % de escenarios con precipitación). Es menos preciso que el pronóstico normal.
+- Datos en vivo de [Open-Meteo](https://open-meteo.com/) (sin clave de API): API de pronóstico y API estacional.
 - Funciona sin conexión mostrando la última respuesta real recibida, con su hora.
 
 ## Publicar en GitHub Pages

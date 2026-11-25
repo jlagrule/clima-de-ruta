@@ -1,5 +1,5 @@
 // Service worker de Clima de Ruta
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `shell-${VERSION}`;
 const DATA_CACHE = `data-${VERSION}`;
 const SHELL = [
@@ -33,7 +33,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   // Datos del clima: siempre de la red; si no hay conexión, la última respuesta real guardada.
-  if (url.hostname === 'api.open-meteo.com') {
+  if (url.hostname === 'api.open-meteo.com' || url.hostname === 'seasonal-api.open-meteo.com') {
     event.respondWith(
       fetch(req)
         .then((res) => {
