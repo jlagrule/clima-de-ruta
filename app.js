@@ -368,5 +368,13 @@ setLocation(saved);
 load(true);
 
 if ('serviceWorker' in navigator) {
+  // Si ya había una versión instalada y entra una nueva, recargar una vez para usar el código nuevo.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(console.error));
 }

@@ -1,5 +1,5 @@
 // Service worker de Clima de Ruta
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `shell-${VERSION}`;
 const DATA_CACHE = `data-${VERSION}`;
 const SHELL = [
@@ -48,10 +48,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Archivos de la app: red primero (para recibir actualizaciones), caché si no hay conexión.
+  // Archivos de la app: red primero, revalidando siempre con el servidor (sin usar la caché
+  // HTTP del navegador), para que la página y su código siempre sean de la misma versión.
+  // Sin conexión, se usa la copia guardada.
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req)
+      fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();
