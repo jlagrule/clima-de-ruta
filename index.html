@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Clima de Ruta</title>
+  <meta name="description" content="Clima en vivo para North Brunswick y Marlboro, NJ.">
+  <meta name="theme-color" content="#0f3a66">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Clima de Ruta">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <img src="icon.svg" alt="" width="28" height="28">
+        <span>Clima de Ruta</span>
+      </div>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Actualizar">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+      </button>
+    </header>
+
+    <div class="switcher" role="tablist" aria-label="Ubicación">
+      <button type="button" role="tab" data-loc="nb" aria-selected="true">North Brunswick</button>
+      <button type="button" role="tab" data-loc="mb" aria-selected="false">Marlboro</button>
+      <span class="switcher-pill" aria-hidden="true"></span>
+    </div>
+
+    <main id="main" aria-live="polite">
+      <section class="hero card" id="hero">
+        <div class="loading">Cargando clima…</div>
+      </section>
+
+      <section class="card">
+        <h2>Hoy por hora</h2>
+        <div class="hourly" id="hourly"></div>
+      </section>
+
+      <section class="card">
+        <h2>Próximos 16 días</h2>
+        <ol class="daily" id="daily"></ol>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p id="status"></p>
+      <p>Datos: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0)</p>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
