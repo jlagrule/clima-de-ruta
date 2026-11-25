@@ -136,6 +136,65 @@ function apiUrl(loc) {
   return `https://api.open-meteo.com/v1/forecast?${p}`;
 }
 
+// Más allá de 16 días: modelo extendido ECMWF EC46 (46 días, 51 miembros del conjunto).
+const TOTAL_DAYS = 45;
+const WET_IN = 0.04; // ≈ 1 mm: umbral para contar un miembro como "con precipitación"
+function extUrl(loc) {
+  const p = new URLSearchParams({
+    latitude: loc.lat,
+    longitude: loc.lon,
+    models: 'ecmwf_ec46',
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum',
+    temperature_unit: 'fahrenheit',
+    precipitation_unit: 'inch',
+    timezone: TZ,
+    forecast_days: '46',
+  });
+  return `https://seasonal-api.open-meteo.com/v1/seasonal?${p}`;
+}
+
+async function getJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.reason || 'Error de la API');
+  return data;
+}
+
+// Promedia los 51 miembros por día y calcula qué porcentaje de ellos trae precipitación.
+function members(daily, name) {
+  return Object.keys(daily).filter((k) => k === name || k.startsWith(`${name}_member`)).map((k) => daily[k]);
+}
+function summarizeExt(data, afterDay, lastDay) {
+  const d = data.daily;
+  const tmax = members(d, 'temperature_2m_max');
+  const tmin = members(d, 'temperature_2m_min');
+  const prcp = members(d, 'precipitation_sum');
+  const mean = (arr, i) => {
+    const v = arr.map((m) => m[i]).filter((x) => x != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const days = [];
+  d.time.forEach((day, i) => {
+    if (day <= afterDay || day > lastDay) return;
+    const p = prcp.map((m) => m[i]).filter((x) => x != null);
+    days.push({
+      day,
+      max: mean(tmax, i),
+      min: mean(tmin, i),
+      pop: p.length ? Math.round((p.filter((x) => x >= WET_IN).length / p.length) * 100) : null,
+      n: p.length,
+    });
+  });
+  return days.filter((x) => x.max != null && x.min != null);
+}
+
+function addDays(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
+
 async function load(force = false) {
   const id = ++requestId;
   const loc = LOCATIONS[activeLoc];
@@ -144,12 +203,11 @@ async function load(force = false) {
     $('hero').innerHTML = '<div class="loading">Cargando clima…</div>';
   }
   try {
-    const res = await fetch(apiUrl(loc), { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.reason || 'Error de la API');
+    const [main, ext] = await Promise.allSettled([getJson(apiUrl(loc)), getJson(extUrl(loc))]);
+    if (main.status === 'rejected') throw main.reason;
     if (id !== requestId) return;
-    render(loc, data);
+    if (ext.status === 'rejected') console.error(ext.reason);
+    render(loc, main.value, ext.status === 'fulfilled' ? ext.value : null);
     lastLoad = Date.now();
   } catch (err) {
     if (id !== requestId) return;
@@ -160,6 +218,8 @@ async function load(force = false) {
       <button type="button" id="retry">Reintentar</button></div>`;
     $('hourly').innerHTML = '';
     $('daily').innerHTML = '';
+    $('extended').innerHTML = '';
+    $('ext-note').textContent = '';
     $('status').textContent = '';
     $('retry').addEventListener('click', () => load(true));
   } finally {
@@ -168,7 +228,19 @@ async function load(force = false) {
 }
 
 /* ---------- Render ---------- */
-function render(loc, data) {
+function dayLabel(day, today) {
+  const date = parseLocal(day);
+  const name = day === today ? 'Hoy' : cap(date.toLocaleDateString('es-US', { weekday: 'short' }).replace('.', ''));
+  const sub = date.toLocaleDateString('es-US', { day: 'numeric', month: 'short' }).replace('.', '');
+  return `<div class="day-name">${name}<small>${sub}</small></div>`;
+}
+function rangeBar(mn, mx, lo, span) {
+  const left = ((mn - lo) / span) * 100, width = ((mx - mn) / span) * 100;
+  return `<div class="range"><span class="lo">${deg(mn)}</span><div class="bar"><span style="left:${left}%;width:${Math.max(width, 4)}%"></span></div><span class="hi">${deg(mx)}</span></div>`;
+}
+const dropIcon = (pop) => `<svg viewBox="0 0 64 64" aria-hidden="true" class="drop"><path d="M32 10C24 22 18 31 18 39a14 14 0 0 0 28 0c0-8-6-17-14-29z" fill="#3d8ef0" fill-opacity="${(0.15 + 0.85 * pop / 100).toFixed(2)}" stroke="#3d8ef0" stroke-width="2.5"/></svg>`;
+
+function render(loc, data, extData) {
   const c = data.current;
   const d = data.daily;
   const h = data.hourly;
@@ -219,25 +291,46 @@ function render(loc, data) {
   const nowEl = hourly.querySelector('.hour.now');
   if (nowEl) hourly.scrollLeft = Math.max(0, nowEl.offsetLeft - hourly.offsetLeft - 16);
 
-  // Diario: 16 días
-  const lo = Math.min(...d.temperature_2m_min.filter((v) => v != null));
-  const hi = Math.max(...d.temperature_2m_max.filter((v) => v != null));
-  const span = Math.max(1, hi - lo);
+  // Días 17 a 45: tendencia del modelo extendido (solo días después del pronóstico normal)
+  const lastDay = addDays(today, TOTAL_DAYS - 1);
+  const ext = extData ? summarizeExt(extData, d.time[d.time.length - 1], lastDay) : [];
+
+  // Una sola escala de temperatura para comparar ambas listas
+  const mins = d.temperature_2m_min.concat(ext.map((x) => x.min)).filter((v) => v != null);
+  const maxs = d.temperature_2m_max.concat(ext.map((x) => x.max)).filter((v) => v != null);
+  const lo = Math.min(...mins);
+  const span = Math.max(1, Math.max(...maxs) - lo);
+
+  // Diario: pronóstico normal (16 días)
+  $('daily-title').textContent = `Próximos ${d.time.length} días`;
   $('daily').innerHTML = d.time.map((day, i) => {
-    const date = parseLocal(day);
-    const name = day === today ? 'Hoy' : cap(date.toLocaleDateString('es-US', { weekday: 'short' }).replace('.', ''));
-    const sub = date.toLocaleDateString('es-US', { day: 'numeric', month: 'short' }).replace('.', '');
-    const mn = d.temperature_2m_min[i], mx = d.temperature_2m_max[i];
-    const left = ((mn - lo) / span) * 100, width = ((mx - mn) / span) * 100;
     const pop = d.precipitation_probability_max[i];
     const [dd] = describe(d.weather_code[i]);
     return `<li class="day">
-      <div class="day-name">${name}<small>${sub}</small></div>
+      ${dayLabel(day, today)}
       ${weatherIcon(d.weather_code[i], true, dd)}
       <div class="day-pop">${pop != null && pop >= 10 ? `${pop}%` : ''}</div>
-      <div class="range"><span class="lo">${deg(mn)}</span><div class="bar"><span style="left:${left}%;width:${Math.max(width, 4)}%"></span></div><span class="hi">${deg(mx)}</span></div>
+      ${rangeBar(d.temperature_2m_min[i], d.temperature_2m_max[i], lo, span)}
     </li>`;
   }).join('');
+
+  const first = d.time.length + 1;
+  if (ext.length) {
+    $('ext-title').textContent = `Tendencia: días ${first} a ${first + ext.length - 1}`;
+    $('ext-note').innerHTML = `Modelo extendido ECMWF (EC46), promedio de ${ext[0].n} escenarios. ` +
+      `El % es la parte de los escenarios con al menos ${WET_IN} in de lluvia o nieve. ` +
+      'Es menos preciso que el pronóstico normal: úsalo como tendencia.';
+    $('extended').innerHTML = ext.map((x) => `<li class="day">
+      ${dayLabel(x.day, today)}
+      ${dropIcon(x.pop ?? 0)}
+      <div class="day-pop">${x.pop != null ? `${x.pop}%` : ''}</div>
+      ${rangeBar(x.min, x.max, lo, span)}
+    </li>`).join('');
+  } else {
+    $('ext-title').textContent = `Tendencia: días ${first} a ${TOTAL_DAYS}`;
+    $('ext-note').textContent = 'No se pudo cargar el pronóstico extendido en este momento.';
+    $('extended').innerHTML = '';
+  }
 
   const stale = !navigator.onLine;
   $('status').innerHTML = stale
